@@ -46,6 +46,8 @@ The manifest also carries the original `metadata.json` verbatim under
 `source_metadata`, plus `topic`, `scene_count`, and
 `total_estimated_duration_seconds`.
 
+**Duration precedence:** `estimated_duration_seconds` here is a video-side estimate (proportional to word count), useful for planning shot length before narration exists. Once the Voice Generation Agent and Video Editor Agent have run, the Video Editor Agent's `edit_manifest.json` timing - driven by actual narration duration - is authoritative; this field is not recalculated to match it.
+
 ## How it works
 
 1. **`scene_parser.py`** - pure parsing, no AI. Splits `script.md` on `##`

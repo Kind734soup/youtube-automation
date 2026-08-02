@@ -43,6 +43,8 @@ The manifest also carries the original `metadata.json` verbatim under
 `source_metadata`, plus `topic`, `section_count`, and
 `total_estimated_duration_seconds`.
 
+**Duration precedence:** this agent's `estimated_duration_seconds` is what the Video Editor Agent treats as authoritative when it builds the final timeline - narration length is what actually determines a video's runtime, not the Video Production Agent's separate (and slightly different) per-scene estimate.
+
 ## How it works
 
 1. **`section_parser.py`** - pure parsing, no AI, no voice API. Splits

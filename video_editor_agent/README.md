@@ -35,7 +35,12 @@ fields:
 
 | Field | Description |
 |---|---|
+| `topic` | The story's topic, carried over from `metadata.json` |
+| `source_metadata` | The original `metadata.json`, carried over verbatim |
+| `scene_count` | Number of entries in `timeline` |
+| `total_duration_seconds` | Sum of every timeline entry's `duration_seconds` |
 | `final_resolution` / `final_aspect_ratio` | Derived from the most common `recommended_aspect_ratio` across the Video Production Agent's scenes (e.g. `1920x1080` / `16:9`) |
+| `framerate_fps` | Target framerate for the final render (currently a fixed default of 24) |
 | `export_settings` | Container, video/audio codec, bitrates, framerate, pixel format - an FFmpeg-ready encode target |
 | `timeline` | Ordered list of scene entries, see below |
 
@@ -95,6 +100,10 @@ and `audio_asset_filenames` list more than one entry, in order - the
 eventual FFmpeg step concatenates them into one continuous narration
 track for that scene, still under a single visual clip and a single
 timeline entry.
+
+### Duration precedence
+
+The Video Production Agent and Voice Generation Agent each estimate scene/section duration independently (proportional word-count split of the script's total runtime, vs. word count ÷ 135 wpm), so their totals can differ slightly - about 0.1% in testing against the Ancient Egypt script. This agent always uses the Voice Generation Agent's narration-based durations for `start_time_seconds`/`end_time_seconds`/`duration_seconds`, since narration length is what will actually determine the final video's runtime once real audio exists. `production_manifest.json`'s own `estimated_duration_seconds` is informational only past this point.
 
 ## Usage
 
