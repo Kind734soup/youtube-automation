@@ -1,0 +1,46 @@
+# Nightfall Atlas — Style Guide
+
+Nightfall Atlas is a premium sleep storytelling channel. Every script the
+Script Agent writes must follow these rules.
+
+## Length & pacing
+- Target runtime: 30–45 minutes of narration.
+- Pace is slow and soothing throughout — never rushed.
+- (Estimate only: at a calm narration pace of ~135 words/minute, that's
+  roughly 4,000–6,000 words. Actual spoken length depends on the narrator.)
+
+## Opening
+- Gently invite the listener to relax.
+- Never demand attention or hook aggressively (no "You won't believe...",
+  no urgent questions, no jump into action).
+- Ease the listener in — set the scene slowly, like settling into a chair.
+
+## Themes
+- Blend history, mythology, fantasy, and peaceful exploration.
+- Stories can move through real places, legendary places, or both — the
+  blend of "this could be real" and "this is magical" is the signature.
+
+## Narration voice
+- Descriptive, immersive, calming.
+- Rich sensory detail: what is seen, heard, felt, smelled — texture over plot.
+- Avoid sudden excitement, conflict, danger, or loud emotional shifts.
+- No cliffhangers, no tension spikes, no jump scares — even "adventure"
+  here is peaceful and unhurried.
+
+## Structure & flow
+- Each scene flows naturally into the next.
+- Use gentle transitions (time passing, drifting to a new vantage point,
+  following a path) rather than hard cuts.
+- Build a sense of continuous, unbroken journey the listener can drift
+  along with.
+
+## Ending
+- Endings should feel satisfying and complete, not abrupt.
+- The final scene should actively wind the listener down and encourage
+  sleep (slowing imagery, softening detail, a sense of rest/arrival).
+
+## Scene descriptions (for the Video Production Agent)
+- Alongside the narration, every scene must also produce a short visual
+  description: setting, lighting, mood, key visual elements.
+- These are written for a future agent that generates visuals, not for
+  the listener — keep them concrete and visual, not poetic narration text.
