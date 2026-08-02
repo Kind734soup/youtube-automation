@@ -7,9 +7,13 @@ Agent (`agent/`), Script Agent (`script_agent/`), and Video Production Agent
 (`video_production_agent/`) - it does not import from any of them, and does
 not modify anything they produce.
 
-**This agent does not call any paid voice API.** It only produces a
-manifest. Wiring up an actual voice provider (OpenAI TTS, ElevenLabs, ...)
-is future work - see "Adding a voice provider" below.
+**This agent does not require any paid voice API.** Building
+`narration_manifest.json` never calls a voice provider at all - it only
+calls an LLM for voice direction (see "How it works" below). Rendering
+real audio uses `windows_sapi` (free, offline, local Windows
+text-to-speech, no API key) by default - see "Rendering real audio"
+below. Paid providers (OpenAI TTS, ElevenLabs, ...) can be added later
+behind the same `VoiceProvider` interface - see "Adding a voice provider".
 
 ## What it consumes
 
@@ -44,6 +48,11 @@ The manifest also carries the original `metadata.json` verbatim under
 `total_estimated_duration_seconds`.
 
 **Duration precedence:** this agent's `estimated_duration_seconds` is what the Video Editor Agent treats as authoritative when it builds the final timeline - narration length is what actually determines a video's runtime, not the Video Production Agent's separate (and slightly different) per-scene estimate.
+
+Separately, once a voice provider renders real audio (see "Rendering real
+audio" below), the actual audio files are written to
+`<project folder>/assets/audio/`, alongside (not inside) the other
+manifests.
 
 ## How it works
 
@@ -95,32 +104,114 @@ just over the 3000-character limit and was split in two), summing to
 ~28.9 minutes of estimated narration - matching that script's own
 `metadata.json`.
 
+## Rendering real audio
+
+Once `narration_manifest.json` exists (see "Usage" above), a separate
+step renders real audio files from it using a connected `VoiceProvider`.
+This never needs an LLM - it only needs the manifest and a voice
+provider.
+
+### Setup (windows_sapi - the default, free, offline provider)
+
+`windows_sapi` uses whatever voices are already installed in Windows
+Speech via [pyttsx3](https://pypi.org/project/pyttsx3/), Windows' own
+SAPI5 text-to-speech engine. No API key, no account, no internet
+connection, no cost. It needs two packages that aren't in this agent's
+base `requirements.txt` (they're Windows-only and optional - only
+installed if you actually want local audio rendering):
+
+```
+.venv\Scripts\python.exe -m pip install pyttsx3 pywin32
+```
+
+You can check which voices are available on your machine with:
+```
+.venv\Scripts\python.exe -c "import pyttsx3; [print(v.id, '|', v.name) for v in pyttsx3.init().getProperty('voices')]"
+```
+Windows ships with at least one voice (e.g. "Microsoft David Desktop" /
+"Microsoft Zira Desktop") out of the box; more can be added in Windows
+Settings → Time & Language → Speech.
+
+Which provider gets used is controlled by `VOICE_PROVIDER` in `.env`
+(see `.env.example`) - it defaults to `windows_sapi` even if unset, so no
+`.env` change is required to use it.
+
+### Commands
+
+```
+python voice_generation_agent/main.py test-first --from-script scripts/<topic-slug>_<date>
+python voice_generation_agent/main.py narrate --from-script scripts/<topic-slug>_<date>
+```
+
+- **`test-first`** renders only section 1's audio - use this first, to
+  sanity-check narration text and voice settings before committing to a
+  full render.
+- **`narrate`** renders every section.
+
+Both write `.wav` files into `<project folder>/assets/audio/`, named
+after each section's manifest entry - e.g. `narration_manifest.json`'s
+`output_filename: "section_01.mp3"` becomes
+`assets/audio/section_01.wav`. The `.wav` extension (not `.mp3`) is
+because that's the real format `windows_sapi` produces; a future
+provider like OpenAI TTS or ElevenLabs would produce `.mp3` instead - see
+"Adding a voice provider" below for why the extension is decided by the
+provider, not hardcoded.
+
+Both commands accept `--provider <name>` to override `VOICE_PROVIDER` for
+a single run (currently only `windows_sapi` is implemented).
+
+### Tested (real audio)
+
+Ran `test-first` against the Ancient Egypt script's real section 1
+narration: produced a valid mono 16-bit 22050Hz WAV file at
+`assets/audio/section_01.wav`, confirmed both by the CLI's own report and
+by reading the file back with Python's `wave` module - `171.25` seconds,
+matching exactly between the provider's self-reported duration and the
+file's actual frame count ÷ sample rate.
+
+### Implementation note: a fresh engine per section
+
+`windows_sapi_provider.py` creates a brand-new `pyttsx3` engine for every
+section instead of reusing one engine across a whole story. This was
+discovered the hard way while building this provider: calling
+`runAndWait()` repeatedly on one reused engine instance hung indefinitely
+on Windows SAPI5 (confirmed - it hung on the very first iteration of a
+reuse loop). A fresh engine per section is slightly slower to start up
+but reliable; `narrate` (rendering a full ~9-section story) will take
+noticeably longer than a single `test-first` call as a result.
+
 ## Adding a voice provider
 
-`voice_generation_agent/providers/` is where future text-to-speech
-integrations live. Nothing is implemented there yet - `providers/base.py`
-defines the interface every provider will implement, and
-`providers/__init__.py` documents the registration pattern:
+`voice_generation_agent/providers/` is where text-to-speech integrations
+live. `windows_sapi_provider.py` (see "Rendering real audio" above) is
+the first one, implementing `providers/base.py`'s interface:
 
 ```python
 class VoiceProvider(ABC):
     @abstractmethod
-    def synthesize_section(self, section, output_path):
-        """Render one narration_manifest.json section to an audio file."""
+    def synthesize_section(self, section, output_path_stem):
+        """Render one narration_manifest.json section to an audio file.
+
+        output_path_stem has no extension - the provider appends whatever
+        extension its own output format actually is (.wav, .mp3, ...) and
+        returns the real path in its result dict.
+        """
 ```
 
-To wire up a real provider later (OpenAI TTS, ElevenLabs, or anything
-else):
+To wire up a paid/hosted provider later (OpenAI TTS, ElevenLabs, or
+anything else):
 
 1. Write `voice_generation_agent/providers/<name>_provider.py`
    implementing `VoiceProvider`, using whatever that provider's API needs
    (its own auth, its own request/response shape) - it just has to accept
    one manifest section dict and produce a rendered audio file.
 2. Add one line to `get_provider()` in `providers/__init__.py` mapping the
-   provider's name to that class.
-3. Feed it sections straight out of `narration_manifest.json` - no other
-   part of this agent needs to change, since the manifest format is the
-   stable contract between "what to say and how" and "how to render it".
+   provider's name to that class (see how `windows_sapi` is registered
+   there already).
+3. Set `VOICE_PROVIDER=<name>` in `.env` (or pass `--provider <name>` on
+   the command line) - no other part of this agent needs to change, since
+   `narration_manifest.json` is the stable contract between "what to say
+   and how" and "how to render it".
 
 Because every section already carries `narration`, `voice_tone`,
 `speaking_pace`, `pause_guidance`, `pronunciation_notes`, and
