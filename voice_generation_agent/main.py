@@ -32,32 +32,38 @@ def run_build(folder):
     )
 
 
-def _run_narrate(folder, provider_name, sections_to_render, label):
-    manifest = load_narration_manifest(folder)
+def _run_narrate(folder, provider_name, sections_to_render, label, force):
     provider_name = provider_name or default_provider_name()
     print(f"Rendering {label} from: {folder}")
     print(f"Voice provider: {provider_name}")
 
-    results = narrate_sections(folder, sections_to_render, provider_name=provider_name)
+    results = narrate_sections(folder, sections_to_render, provider_name=provider_name, force=force)
 
+    rendered, skipped = 0, 0
     for section, result in zip(sections_to_render, results):
+        status = "skipped (already exists)" if result["skipped"] else "rendered"
+        rendered += 0 if result["skipped"] else 1
+        skipped += 1 if result["skipped"] else 0
         print(
             f"  Section {section['section_number']}: {result['output_path']} "
-            f"({result['format']}, {result['duration_seconds']}s)"
+            f"({result['format']}, {result['duration_seconds']}s) - {status}"
         )
     total_seconds = sum(r["duration_seconds"] for r in results if r["duration_seconds"] is not None)
-    print(f"\nDone. {len(results)} file(s) written, {round(total_seconds, 1)}s total audio.")
+    print(
+        f"\nDone. {len(results)} file(s) total - {rendered} rendered, {skipped} already existed and were left "
+        f"alone. {round(total_seconds, 1)}s total audio."
+    )
 
 
-def run_test_first(folder, provider_name):
+def run_test_first(folder, provider_name, force):
     manifest = load_narration_manifest(folder)
     first_section = manifest["sections"][0]
-    _run_narrate(folder, provider_name, [first_section], "section 1 only (test)")
+    _run_narrate(folder, provider_name, [first_section], "section 1 only (test)", force)
 
 
-def run_narrate(folder, provider_name):
+def run_narrate(folder, provider_name, force):
     manifest = load_narration_manifest(folder)
-    _run_narrate(folder, provider_name, manifest["sections"], f"all {manifest['section_count']} sections")
+    _run_narrate(folder, provider_name, manifest["sections"], f"all {manifest['section_count']} sections", force)
 
 
 def main():
@@ -78,11 +84,17 @@ def main():
     test_first_p.add_argument(
         "--provider", default=None, help="Voice provider to use (default: VOICE_PROVIDER in .env, or windows_sapi)"
     )
+    test_first_p.add_argument(
+        "--force", action="store_true", help="Re-render even if section_01's audio file already exists"
+    )
 
     narrate_p = subparsers.add_parser("narrate", help="Render every section's audio for the whole story")
     narrate_p.add_argument("--from-script", required=True, help="Path to a project folder with narration_manifest.json")
     narrate_p.add_argument(
         "--provider", default=None, help="Voice provider to use (default: VOICE_PROVIDER in .env, or windows_sapi)"
+    )
+    narrate_p.add_argument(
+        "--force", action="store_true", help="Re-render every section even if its audio file already exists"
     )
 
     args = parser.parse_args()
@@ -90,9 +102,9 @@ def main():
     if args.command == "build":
         run_build(args.from_script)
     elif args.command == "test-first":
-        run_test_first(args.from_script, args.provider)
+        run_test_first(args.from_script, args.provider, args.force)
     elif args.command == "narrate":
-        run_narrate(args.from_script, args.provider)
+        run_narrate(args.from_script, args.provider, args.force)
 
 
 if __name__ == "__main__":

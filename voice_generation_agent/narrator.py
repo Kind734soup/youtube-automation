@@ -9,6 +9,7 @@ the only module in the agent that imports from providers/.
 
 import json
 import os
+import wave
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -34,12 +35,29 @@ def load_narration_manifest(folder):
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
-def narrate_sections(folder, sections, provider_name=None):
+def _existing_audio_file(audio_dir, stem):
+    matches = sorted(audio_dir.glob(f"{stem}.*"))
+    return matches[0] if matches else None
+
+
+def _wav_duration_seconds(path):
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            return round(wav_file.getnframes() / wav_file.getframerate(), 2)
+    except (wave.Error, EOFError):
+        return None
+
+
+def narrate_sections(folder, sections, provider_name=None, force=False):
     """Render `sections` (entries from narration_manifest.json's "sections"
     list) to real audio files under <folder>/assets/audio/, using the
     named voice provider (defaults to VOICE_PROVIDER in .env, or
-    "windows_sapi" if unset). Returns the list of result dicts each
-    provider's synthesize_section() returns, one per section."""
+    "windows_sapi" if unset).
+
+    If a section's audio file already exists, it is left alone and
+    reported as skipped rather than re-rendered - pass force=True to
+    regenerate it anyway. Returns one result dict per section, each with
+    at least {"output_path", "format", "duration_seconds", "skipped"}."""
     folder = Path(folder)
     audio_dir = folder / AUDIO_SUBDIR
     audio_dir.mkdir(parents=True, exist_ok=True)
@@ -51,6 +69,21 @@ def narrate_sections(folder, sections, provider_name=None):
         # The manifest's output_filename is a provider-agnostic placeholder (e.g. "section_01.mp3");
         # keep its numbering, but let the provider decide the real extension it actually produces.
         stem = Path(section["output_filename"]).stem
+        existing = None if force else _existing_audio_file(audio_dir, stem)
+
+        if existing:
+            duration = _wav_duration_seconds(existing) if existing.suffix == ".wav" else None
+            results.append(
+                {
+                    "output_path": str(existing),
+                    "format": existing.suffix.lstrip("."),
+                    "duration_seconds": duration,
+                    "skipped": True,
+                }
+            )
+            continue
+
         result = provider.synthesize_section(section, audio_dir / stem)
+        result["skipped"] = False
         results.append(result)
     return results
