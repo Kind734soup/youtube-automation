@@ -1,0 +1,50 @@
+"""Manual (Claude Pro) provider - no API key or billing required.
+
+Instead of calling an API, generate() prints (and saves) each prompt for
+you to paste into Claude Pro yourself, then reads Claude's reply back from
+the terminal. Nothing else in video_editor_agent knows the difference -
+swap to the Anthropic API later by changing LLM_PROVIDER in .env. No code
+changes needed.
+"""
+
+from pathlib import Path
+
+from .base import LLMProvider
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "video_editor_agent" / "_manual_prompts"
+
+
+class ManualProvider(LLMProvider):
+    def __init__(self):
+        self._call_count = 0
+
+    def generate(self, system, prompt, max_tokens=4096):
+        self._call_count += 1
+        full_prompt = f"{system}\n\n---\n\n{prompt}"
+        approx_words = max(int(max_tokens / 1.5), 50)
+
+        PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
+        prompt_path = PROMPTS_DIR / f"prompt_{self._call_count:02d}.txt"
+        prompt_path.write_text(full_prompt, encoding="utf-8")
+
+        print("\n" + "=" * 70)
+        print(f"MANUAL STEP {self._call_count} - paste this into Claude Pro")
+        print(f"(aim for roughly {approx_words} words in the reply)")
+        print(f"(also saved to: {prompt_path})")
+        print("=" * 70)
+        print(full_prompt)
+        print("=" * 70)
+        print("Paste Claude's FULL reply below.")
+        print("When done pasting, type END on its own line and press Enter.\n")
+
+        lines = []
+        while True:
+            line = input()
+            if line.strip() == "END":
+                break
+            lines.append(line)
+
+        response = "\n".join(lines).strip()
+        if not response:
+            raise RuntimeError("No response was entered - cannot continue without Claude's reply.")
+        return response
