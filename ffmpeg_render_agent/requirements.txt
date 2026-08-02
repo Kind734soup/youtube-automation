@@ -1,0 +1,2 @@
+# No pip packages required - this agent only shells out to a system FFmpeg
+# install (ffmpeg + ffprobe on PATH). See README.md, "Setup".
