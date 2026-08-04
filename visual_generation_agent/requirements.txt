@@ -1,1 +1,3 @@
 python-dotenv==1.0.1
+openai>=1.0.0
+httpx>=0.23.0  # test-only: used by tests/test_openai_images_provider.py to build local httpx objects, no network calls

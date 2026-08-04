@@ -8,10 +8,11 @@ scene. It is a completely separate agent from the Research Agent
 and FFmpeg Render Agent (`ffmpeg_render_agent/`) - it does not import
 from any of them, and does not modify anything they produce.
 
-**This agent does not call any paid image/video API.** For Version 1 it
-only uses a free, offline `PlaceholderProvider`. Wiring up a real
-provider (OpenAI Images, FLUX, SDXL, Runway, Veo, Kling, Pika, ...) is
-future work - see "Adding a visual provider" below.
+Two providers are wired up: the free, offline `PlaceholderProvider`
+(still the default), and `OpenAIImagesProvider`, the first real
+image-generation provider - see "The `OpenAIImagesProvider`" below.
+Wiring up further providers (FLUX, SDXL, Runway, Veo, Kling, Pika, ...)
+is future work - see "Adding a visual provider" below.
 
 ## What it consumes
 
@@ -40,7 +41,7 @@ location.
    `production_manifest.json` and `metadata.json`.
 2. **`providers/`** - `VisualProvider` is the interface every provider
    implements (`generate_visual(scene, output_path)`); `placeholder_provider.py`
-   is the only one wired up today.
+   and `openai_images_provider.py` are wired up today.
 3. **`organizer.py`** - runs the connected provider over every scene,
    writes `assets/visuals/scene_NN.png`, and (only with `--publish`)
    copies each image on to `assets/video/scene_NN.png` - see "Handing
@@ -78,6 +79,33 @@ the pipeline before any real image provider is connected):
 A subtle `vignette` filter is applied for a dark, cinematic edge falloff
 suitable for the channel's Nightfall Atlas style.
 
+## The `OpenAIImagesProvider`
+
+The first real image-generation provider. For each scene it:
+
+1. Builds a prompt from the scene's `visual_prompt` (already art-directed
+   by the Video Production Agent) plus its `lighting`, `mood`, and
+   `environment` fields when present, with a fixed style suffix keeping
+   every image in the channel's calm, painterly, text-free look.
+2. Calls OpenAI's Images API (`gpt-image-1` by default) for one image.
+3. Normalizes the result to this project's standard `1920x1080` with
+   ffmpeg (`scale` + centered `crop`) - gpt-image-1's landscape size
+   (`1536x1024`, a 3:2 ratio) doesn't natively match this project's 16:9
+   output, so every scene ends up the same resolution as
+   `PlaceholderProvider` produces, regardless of which provider ran.
+
+Requires `OPENAI_API_KEY` in `.env` (OpenAI billing must be active - the
+Images API has no free tier). Select it with `VISUAL_PROVIDER=openai_images`
+in `.env`, or `--provider openai_images` per run. Optional overrides (also
+via `.env`, defaults shown): `OPENAI_IMAGE_MODEL=gpt-image-1`,
+`OPENAI_IMAGE_SIZE=1536x1024`, `OPENAI_IMAGE_QUALITY=medium`.
+
+Without `OPENAI_API_KEY` set, selecting this provider fails immediately
+with a clear `RuntimeError` (matching `AnthropicProvider`'s pattern in
+`script_agent`) rather than partway through generation - `placeholder`
+remains the default in both `.env.example` and this project's own `.env`,
+so nothing about existing (manual/free) runs changes unless you opt in.
+
 ## Handing images to the FFmpeg Render Agent
 
 The FFmpeg Render Agent (unmodified, per its own README) looks for real
@@ -106,8 +134,8 @@ class VisualProvider(ABC):
         """Generate one still image for a production_manifest.json scene."""
 ```
 
-To wire one up later (OpenAI Images, FLUX, SDXL, Runway, Veo, Kling,
-Pika, or anything else):
+To wire one up later (FLUX, SDXL, Runway, Veo, Kling, Pika, or anything
+else):
 
 1. Write `visual_generation_agent/providers/<name>_provider.py`
    implementing `VisualProvider`.
@@ -117,9 +145,38 @@ Pika, or anything else):
 
 ## Setup
 
-Requires FFmpeg on `PATH` (used by `PlaceholderProvider` only - a real
-image-API provider added later wouldn't need it). No pip packages beyond
-`python-dotenv`, already used project-wide for `.env`.
+Requires FFmpeg on `PATH` - used by `PlaceholderProvider` to draw its
+text-card image, and by `OpenAIImagesProvider` to normalize OpenAI's
+returned image to `1920x1080`. Pip packages: `python-dotenv` (project-wide)
+plus `openai` (only imported when `openai_images` is actually selected).
+`httpx` (a transitive dependency of `openai`, listed explicitly in
+`requirements.txt`) is used directly by the test suite below.
+
+## Running the automated tests
+
+`tests/test_openai_images_provider.py` covers `OpenAIImagesProvider`
+without ever calling OpenAI - `openai.OpenAI` itself is monkeypatched
+with a fake class before the provider can touch it, so **no network
+request and no billing is possible**, even if a real `OPENAI_API_KEY` is
+set when the suite runs. It checks:
+
+- the provider loads correctly against a mocked client
+- a missing `OPENAI_API_KEY` raises a clear `RuntimeError`
+- a successful (mocked) generation writes one normalized `1920x1080`
+  PNG and leaves no leftover `.tmp`/`.raw.tmp.png` files
+- both a decode-level failure (bad image bytes) and an API-level failure
+  (simulated `AuthenticationError`) leave **no partial or corrupt file**
+  at `output_path`
+- `VISUAL_PROVIDER` still defaults to `placeholder` when unset, and
+  `.env.example` documents that same default
+- `PlaceholderProvider` still generates a fresh image and then correctly
+  skips on rerun - unaffected by adding `openai_images`
+
+Run from the repo root:
+
+```
+python -m unittest visual_generation_agent.tests.test_openai_images_provider -v
+```
 
 ## Tested against
 
@@ -138,8 +195,21 @@ Ran against the existing Nightfall Atlas Ancient Egypt project
   `final.mp4` at 10s and 250s show the new images on screen, confirmed
   visually.
 
+`OpenAIImagesProvider` (added after the above): confirmed the provider
+registry, `.env`/`--provider` selection, and the manual/free `placeholder`
+default all still work unchanged - `generate` against the Ancient Egypt
+project with no `--provider` flag still resolves to `placeholder` and
+correctly skips all 8 already-generated scenes. With `OPENAI_API_KEY`
+unset, `--provider openai_images` fails immediately with a clear
+`RuntimeError` rather than a partial/corrupt run. All of this is now
+covered by the automated, mocked suite in `tests/` - see "Running the
+automated tests" above; all 8 tests pass. A real end-to-end generation
+run (actual OpenAI image output, viewed against a scene) is still
+pending an active `OPENAI_API_KEY`.
+
 ## Out of scope
 
-No real image/video provider is connected yet. Music/ambient audio,
-publishing, and analytics remain out of scope for this agent, same as
-elsewhere in this project.
+Only one real provider (`OpenAIImagesProvider`) is connected so far -
+FLUX, SDXL, Runway, Veo, Kling, and Pika remain future work. Music/ambient
+audio, publishing, and analytics remain out of scope for this agent, same
+as elsewhere in this project.
